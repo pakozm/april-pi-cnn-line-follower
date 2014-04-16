@@ -13,7 +13,7 @@ images_dir=os.environ.get("HOME") + "/april-pi-cnn-line-follower/images"
 def filenames():
     frame = 0
     while True:
-        yield '%s/image%04d.jpg' % (images_dir,frame)
+        yield '%s/image%04d.png' % (images_dir,frame)
         frame = (frame+1) % MAXFRAMES
 
 with picamera.PiCamera() as camera:
