@@ -1,5 +1,5 @@
 #!/bin/bash
-dir=$HOME/april-pi-cnn-line-folower
+dir=$HOME/april-pi-cnn-line-follower
 pid=$($dir/getpid.sh)
 if [ -z $pid ]; then
     echo "ERROR: NOT FOUND"

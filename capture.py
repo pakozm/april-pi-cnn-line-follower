@@ -8,7 +8,7 @@ HEIGHT=32
 MAXFRAMES=200
 FRAMERATE=24
 
-images_dir=os.environ.get("$HOME") + "/april-pi-cnn-line-folower/images"
+images_dir=os.environ.get("HOME") + "/april-pi-cnn-line-follower/images"
 
 def filenames():
     frame = 0
