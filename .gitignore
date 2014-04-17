@@ -1,6 +1,7 @@
 images/*
 gmon.out
 *.pyc
+*.net
 
 # Emacs backups #
 #################
