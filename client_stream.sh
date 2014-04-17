@@ -11,4 +11,4 @@ fi
 if [[ -z $h ]]; then
     h=32
 fi
-raspivid -w $w -h $h -t 60000 -o - | nc $server 8000
+raspivid -vs -fps 20 -w $w -h $h -t 60000 -o - | nc $server 8000

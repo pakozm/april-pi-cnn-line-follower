@@ -9,23 +9,23 @@ local weights_random      = random(weights_seed)
 
 -- ANN topology
 local PLANES=3
-local HEIGHT=32
-local WIDTH=32
+local HEIGHT=16
+local WIDTH=16
 local INPUT_SIZES = { HEIGHT, WIDTH, PLANES }
 local SIZE = iterator(ipairs(INPUT_SIZES)):select(2):reduce(math.mul(),1)
 local NACTIONS = 3
 
 -- RGB image ( 3 input planes, 5x5 kernel ) => nconv1 output planes
 local conv1  = {5, 5, 3}
-local nconv1 = 10
+local nconv1 = 8
 -- max-pooling 2x2 kernel
 local maxp1  = {1, 2, 2}
 -- ( nconv1 input planes, 3x3 kernel ) => nconv2 output planes
 local conv2  = {nconv1, 3, 3}
-local nconv2 = 20
+local nconv2 = 16
 -- max-pooling 2x2 kernel
 local maxp2  = {1, 2, 2}
-local hidden = 100
+local hidden = 32
 
 local thenet = ann.components.stack()
 

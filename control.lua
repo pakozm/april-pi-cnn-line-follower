@@ -1,3 +1,5 @@
+package.path = "%s?.lua;%s"%{ arg[0]:get_path(), package.path }
+local utils = require "utils"
 local brickpi = require "brickpi"
 --
 local images_dir = "%simages"%{ arg[0]:get_path() }
@@ -53,15 +55,26 @@ local optimizer = trainer:get_optimizer()
 
 -- FUNCTIONS
 
-function sleep(v)
+local function sleep(v)
   os.execute("sleep %f"%{v})
 end
 
-function do_until(f)
+local function do_until(f)
   while not f() do sleep(0.01) end
 end
 
-function calibrate()
+local function take_image()
+  local command = "ls -t %s/*" % {images_dir}
+  local g = assert(io.popen(command, "r"))
+  -- remove last images, because they could be corrupted
+  for i=1,3 do g:read("*l") end
+  -- take the third image
+  local img_path = g:read("*l")
+  g:close()
+  return img_path
+end
+
+local function calibrate()
   print("CALIBRATING BLACK...")
   local mean_var = stats.mean_var()
   local N = 100
@@ -76,33 +89,12 @@ function calibrate()
   print("BLACK IS: ", BLACK)
 end
 
-function take_image()
-  local command = "ls -t %s/*" % {images_dir}
-  local g = assert(io.popen(command, "r"))
-  -- remove last images, because they could be corrupted
-  for i=1,3 do g:read("*l") end
-  -- take the third image
-  local img_path = g:read("*l")
-  g:close()
-  return img_path
-end
-
-function normalize(m)
-  local sz   = m:dim(1)*m:dim(2)
-  local mp   = m:rewrap(sz, m:dim(3))
-  local sums = mp:sum(1):scal(1/sz):toTable()
-  mp(':',1):scalar_add(-sums[1])
-  mp(':',2):scalar_add(-sums[2])
-  mp(':',3):scalar_add(-sums[3])
-  return m
-end
-
-function is_black(v)
+local function is_black(v)
   if v > BLACK then return true end
 end
 
 local acc_value = 0
-function compute_reward()
+local function compute_reward()
   local value  = brickpi.sensorValue(LIGHT_SENSOR)
   local reward
   if is_black(value) then
@@ -114,7 +106,7 @@ function compute_reward()
   return acc_value,value
 end
 
-function setup_brickpi()
+local function setup_brickpi()
   do_until(brickpi.setup)
   brickpi.motorEnable(LEFT_MOTOR, RIGHT_MOTOR)
   brickpi.sensorType(LIGHT_SENSOR, brickpi.TYPE_SENSOR_LIGHT_ON)
@@ -123,7 +115,7 @@ function setup_brickpi()
   sleep(1.0)
 end
 
-function do_action(action)
+local function do_action(action)
   if action == ACTION_FORWARD then
     brickpi.motorSteering(LEFT_MOTOR, RIGHT_MOTOR,  0, SPEED*1.5)
   elseif action == ACTION_LEFT then
@@ -135,7 +127,7 @@ function do_action(action)
   end
 end
 
-function take_action(output)
+local function take_action(output)
   local coin = exploration_random:rand()
   if coin < EPSILON then
     return exploration_random:choose{ACTION_FORWARD,ACTION_LEFT,ACTION_RIGHT}
@@ -145,24 +137,24 @@ function take_action(output)
 end
 
 local gradients = matrix.dict()
-function update(prev_output, prev_action, state, reward)
+local function update(prev_output, prev_action, state, reward)
+  local error_grad = matrix.col_major(1, NACTIONS):zeros()
+  local qsa = prev_output:get(1, prev_action)
   local loss,output
-  loss,gradients,output =
+  loss,gradients,output,expected_qsa =
     optimizer:execute(function(it)
                         thenet:reset(it)
                         local output = thenet:forward(state):get_matrix()
-                        local error_grad = matrix.col_major(1, NACTIONS):zeros()
-                        local qsa = prev_output:get(1, prev_action)
                         local expected_qsa = qsa + ALPHA * ( reward + DISCOUNT * output:max() - qsa )
                         local loss = (qsa - expected_qsa)^2
                         error_grad:set(1, prev_action, 0.5 * ( qsa - expected_qsa ) )
                         thenet:backprop(error_grad)
                         gradients:zeros()
                         gradients = thenet:compute_gradients(gradients)
-                        return loss,gradients,output
+                        return loss,gradients,output,expected_qsa
                       end,
                       weights)
-  return loss,output
+  return loss,output,expected_qsa
 end
 
 -- MAIN
@@ -173,6 +165,7 @@ calibrate()
 local finished = false
 signal.register(signal.SIGINT, function() finished = true end)
 
+local prev_input
 local prev_output = matrix.col_major(1,NACTIONS):zeros()
 local prev_action = ACTION_FORWARD
 local clock = util.stopwatch()
@@ -180,12 +173,12 @@ while not finished do
   clock:reset()
   clock:go()
   --
-  local img_path  = take_image()
+  local img_path = take_image()
   local input_img = ImageIO.read(img_path)
-  local input = normalize(input_img:matrix():clone("col_major"))
+  local input = utils.normalize(input_img:matrix():clone("col_major"))
   input = input:rewrap(1, table.unpack(input:dim()))
   local reward,sensor_value = compute_reward()
-  local loss,output = update(prev_output, prev_action, input, reward)
+  local loss,output,expected_qsa = update(prev_output, prev_action, input, reward)
   trainer:save(out_filename, "binary")
   local action = take_action(output)
   do_action(action)
@@ -196,8 +189,8 @@ while not finished do
   --
   clock:stop()
   local t1,t2 = clock:read()
-  printf("OUTPUT: %8.2f %8.2f %8.2f  ACTION: %d  SENSOR: %4d (%4d)  REWARD: %6.2f  LOSS: %8.4f  TIME: %5.2f %5.2f\n",
-         output:get(1,1), output:get(1,2), output:get(1,3),
+  printf("OUTPUT: %8.2f %8.2f %8.2f E(Q): %8.2f   ACTION: %d  SENSOR: %4d (%4d)  REWARD: %6.2f  LOSS: %8.4f  TIME: %5.2f %5.2f\n",
+         output:get(1,1), output:get(1,2), output:get(1,3), expected_qsa,
          action, sensor_value, BLACK, reward, loss, t1, t2)
   local extra_sleep = SLEEP - t1
   if extra_sleep > 0 then

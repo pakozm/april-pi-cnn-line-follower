@@ -2,8 +2,8 @@ import time
 import picamera
 import os
 
-WIDTH=32
-HEIGHT=32
+WIDTH=16
+HEIGHT=16
 
 MAXFRAMES=10
 FRAMERATE=20
