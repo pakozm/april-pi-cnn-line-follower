@@ -5,8 +5,8 @@ import os
 WIDTH=32
 HEIGHT=32
 
-MAXFRAMES=200
-FRAMERATE=24
+MAXFRAMES=10
+FRAMERATE=20
 
 images_dir=os.environ.get("HOME") + "/april-pi-cnn-line-follower/images"
 
