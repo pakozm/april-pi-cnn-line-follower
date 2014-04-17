@@ -107,7 +107,7 @@ function do_action(action)
   end
 end
 
-local gradients
+local gradients = matrix.dict()
 function update(prev_output, prev_action, state, reward)
   local loss,output
   loss,gradients,output =
