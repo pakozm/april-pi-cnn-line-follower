@@ -41,7 +41,8 @@ trainer:set_layerwise_option("b.", "weight_decay",     0.0)
 trainer:set_layerwise_option("b.", "max_norm_penalty", 0.0)
 trainer:set_layerwise_option("b.", "L1_norm",          0.0)
 --
-local thenet = trainer:get_component()
+local thenet  = trainer:get_component()
+local weights = trainer:get_weights_table()
 --
 local optimizer = trainer:get_optimizer()
 
@@ -87,7 +88,7 @@ function compute_reward()
 end
 
 function setup_brickpi()
-  assert(brickpi.setup())
+  while not brickpi.setup() do brickpi.sleep(0.01) end
   brickpi.motorEnable(LEFT_MOTOR, RIGHT_MOTOR)
   brickpi.sensorType(LIGHT_SENSOR, brickpi.TYPE_SENSOR_LIGHT_ON)
   brickpi.setupSensors()
@@ -105,7 +106,24 @@ function do_action(action)
   end
 end
 
-function update()
+local gradients
+function update(prev_output, prev_action, state, reward)
+  local loss,output
+  loss,gradients,output =
+    optimizer:execute(function(it)
+                        thenet:reset(it)
+                        local output = thenet:forward(state)
+                        local error_grad = matrix.col_major(1, NACTIONS):zeros()
+                        local qsa = prev_output:get(1, prev_action)
+                        local expected_qsa = qsa + ALPHA * ( reward + DISCOUNT * output:max() - qsa )
+                        local loss = (qsa - expected_qsa)^2
+                        error_grad:set(1, prev_action, 0.5 * ( qsa - expected_qsa ) )
+                        thenet:backprop(error_grad)
+                        gradients:zeros()
+                        gradients = thenet:compute_gradients(gradients)
+                        return loss,gradients,output
+                      end)
+  return output:get_matrix()
 end
 
 -- MAIN
@@ -123,9 +141,8 @@ while true do
   local input_img = ImageIO.read(img_path)
   local input = normalize(input_img:matrix():clone("col_major"))
   input = input:rewrap(1, table.unpack(input:dim()))
-  local output = thenet:forward(input):get_matrix()
   local reward = compute_reward()
-  update(prev_output, prev_action, output, reward)
+  local loss,_,output = update(prev_output, prev_action, input, reward)
   trainer:save(filename, "binary")
   --
   prev_output = output
@@ -133,7 +150,7 @@ while true do
   --
   clock:stop()
   local t1,t2 = clock:read()
-  printf("TIME: %.2f %.2f\n", t1, t2)
+  printf("LOSS: %.4f  TIME: %.2f %.2f\n", loss, t1, t2)
   local sleep = SLEEP - t1
   if sleep > 0 then
     printf("SLEEP: %.2f\n", sleep)
