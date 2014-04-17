@@ -25,12 +25,12 @@ local WIDTH=32
 local INPUT_SIZES = { HEIGHT, WIDTH, PLANES }
 -- RGB image ( 3 input planes, 5x5 kernel ) => nconv1 output planes
 local conv1  = {5, 5, 3}
-local nconv1 = 20
+local nconv1 = 10
 -- max-pooling 2x2 kernel
 local maxp1  = {1, 2, 2}
 -- ( nconv1 input planes, 3x3 kernel ) => nconv2 output planes
 local conv2  = {nconv1, 3, 3}
-local nconv2 = 40
+local nconv2 = 20
 -- max-pooling 2x2 kernel
 local maxp2  = {1, 2, 2}
 local hidden = 100
