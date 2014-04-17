@@ -109,14 +109,29 @@ function take_image()
   return img_path
 end
 
+function normalize(m)
+  local sz   = m:dim(1)*m:dim(2)
+  local mp   = m:rewrap(sz, m:dim(3))
+  local sums = mp:sum(1):scal(1/sz):toTable()
+  mp(':',1):scalar_add(-sums[1])
+  mp(':',2):scalar_add(-sums[2])
+  mp(':',3):scalar_add(-sums[3])
+  return m
+end
+
 -- MAIN
 
+local clock = util.stopwatch()
 while true do
+  clock:reset()
+  clock:go()
+  --
   local img_path  = take_image()
   local input_img = ImageIO.read(img_path)
-  local input = input_img:matrix():clone("col_major")
+  local input = normalize(input_img:matrix():clone("col_major"))
   input = input:rewrap(1, table.unpack(input:dim()))
-  print(input)
   local output = thenet:forward(input):get_matrix()
-  print(output)
+  --
+  clock:stop()
+  printf("TIME: %.2f %.2f\n", clock:read())
 end
