@@ -23,7 +23,7 @@ local HISTORY_DISCOUNT = 0.5
 local SLEEP            = 0.1
 local LEFT_MOTOR       = brickpi.PORT_A
 local RIGHT_MOTOR      = brickpi.PORT_D
-local LIGHT_SENSOR     = brickpi.PORT_4
+local LIGHT_SENSOR     = brickpi.PORT_1
 
 -- QLearning parameters
 local ACTION_FORWARD  = 1
@@ -234,6 +234,9 @@ while true do
   local t1,t2 = clock:read()
   printf("TIME: %.2f %.2f\n", t1, t2)
   local sleep = SLEEP - t1
-  if sleep > 0 then brickpi.sleep(sleep) end
+  if sleep > 0 then
+    printf("SLEEP: %.2f\n", sleep)
+    brickpi.sleep(sleep)
+  end
   assert(brickpi.update())
 end
