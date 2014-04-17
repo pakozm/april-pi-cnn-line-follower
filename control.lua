@@ -133,7 +133,7 @@ end
 setup_brickpi()
 
 local prev_output = matrix.col_major(1,NACTIONS):zeros()
-local prev_action = FORWARD
+local prev_action = ACTION_FORWARD
 local clock = util.stopwatch()
 while true do
   clock:reset()
