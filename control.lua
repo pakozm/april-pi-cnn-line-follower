@@ -123,7 +123,8 @@ function update(prev_output, prev_action, state, reward)
                         gradients:zeros()
                         gradients = thenet:compute_gradients(gradients)
                         return loss,gradients,output
-                      end)
+                      end,
+                      weights)
   return output:get_matrix()
 end
 
