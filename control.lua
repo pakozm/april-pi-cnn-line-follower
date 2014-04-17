@@ -3,6 +3,7 @@ local brickpi = require "brickpi"
 local images_dir = "%simages"%{ arg[0]:get_path() }
 --
 local filename            = arg[1] or "nets/default.net"
+local out_filename        = arg[2] or "nets/last.net"
 local perturbation_seed   = 5678
 local learning_rate       = 0.1
 local momentum            = 0.2
@@ -143,7 +144,7 @@ while true do
   input = input:rewrap(1, table.unpack(input:dim()))
   local reward = compute_reward()
   local loss,_,output = update(prev_output, prev_action, input, reward)
-  trainer:save(filename, "binary")
+  trainer:save(out_filename, "binary")
   --
   prev_output = output
   prev_action = action
