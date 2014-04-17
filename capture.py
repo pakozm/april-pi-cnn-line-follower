@@ -2,7 +2,7 @@ import time
 import picamera
 import os
 
-WIDTH=40
+WIDTH=32
 HEIGHT=32
 
 MAXFRAMES=200
@@ -22,4 +22,4 @@ with picamera.PiCamera() as camera:
     camera.start_preview()
     # Give the camera some warm-up time
     time.sleep(2)
-    camera.capture_sequence(filenames(), use_video_port=True)
+    camera.capture_sequence(filenames(), format="png", use_video_port=True)
