@@ -113,7 +113,7 @@ function update(prev_output, prev_action, state, reward)
   loss,gradients,output =
     optimizer:execute(function(it)
                         thenet:reset(it)
-                        local output = thenet:forward(state)
+                        local output = thenet:forward(state):get_matrix()
                         local error_grad = matrix.col_major(1, NACTIONS):zeros()
                         local qsa = prev_output:get(1, prev_action)
                         local expected_qsa = qsa + ALPHA * ( reward + DISCOUNT * output:max() - qsa )
@@ -125,7 +125,7 @@ function update(prev_output, prev_action, state, reward)
                         return loss,gradients,output
                       end,
                       weights)
-  return output:get_matrix()
+  return output
 end
 
 -- MAIN
