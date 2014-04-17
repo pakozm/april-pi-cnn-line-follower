@@ -40,7 +40,8 @@ trainer:set_option("max_norm_penalty",  max_norm_penalty)
 trainer:set_layerwise_option("b.", "weight_decay",     0.0)
 trainer:set_layerwise_option("b.", "max_norm_penalty", 0.0)
 trainer:set_layerwise_option("b.", "L1_norm",          0.0)
-
+--
+local thenet = trainer:get_component()
 --
 local optimizer = trainer:get_optimizer()
 
