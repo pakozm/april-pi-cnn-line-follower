@@ -2,21 +2,23 @@ local filename     = arg[1] or "nets/default.net"
 local ann_type     = arg[2] or "perceptron" -- perceptron, mlp, cnn
 local weights_seed = 1234
 --
+package.path = "%s?.lua;%s"%{ arg[0]:get_path(), package.path }
+local utils = require "utils"
+--
 local activation_function = "relu"
 local w_inf               = -0.1
 local w_sup               =  0.1
 local weights_random      = random(weights_seed)
 
 -- ANN topology
-local PLANES=3
-local HEIGHT=16
-local WIDTH=16
+local PLANES=1
+local HEIGHT=24
+local WIDTH=24
 local INPUT_SIZES = { HEIGHT, WIDTH, PLANES }
 local SIZE = iterator(ipairs(INPUT_SIZES)):select(2):reduce(math.mul(),1)
-local NACTIONS = 3
 
--- RGB image ( 3 input planes, 5x5 kernel ) => nconv1 output planes
-local conv1  = {5, 5, 3}
+-- RGB or grayscale image ( PLANES input planes, 5x5 kernel ) => nconv1 output planes
+local conv1  = {5, 5, PLANES}
 local nconv1 = 8
 -- max-pooling 2x2 kernel
 local maxp1  = {1, 2, 2}
@@ -54,7 +56,7 @@ if ann_type == "cnn" then
                                    dot_product_weights="w3" } ):
   push( ann.components.actf[activation_function]() ):
   push( ann.components.hyperplane{ input=hidden,
-                                   output=NACTIONS,
+                                   output=utils.NACTIONS,
                                    bias_weights="b4",
                                    dot_product_weights="w4" } )
 elseif ann_type == "mlp" then
@@ -65,13 +67,13 @@ elseif ann_type == "mlp" then
                                    dot_product_weights="w1" } ):
   push( ann.components.actf[activation_function]() ):
   push( ann.components.hyperplane{ input=hidden,
-                                   output=NACTIONS,
+                                   output=utils.NACTIONS,
                                    bias_weights="b2",
                                    dot_product_weights="w2" } )
 elseif ann_type == "perceptron" then
   thenet:push( ann.components.flatten() ):
   push( ann.components.hyperplane{ input=SIZE,
-                                   output=NACTIONS,
+                                   output=utils.NACTIONS,
                                    bias_weights="b1",
                                    dot_product_weights="w1" } )
 else
