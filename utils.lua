@@ -13,15 +13,15 @@ local utils = {
   RIGHT_MOTOR  = brickpi.PORT_D,
   LIGHT_SENSOR = brickpi.PORT_1,
   --
-  SPEED            = 0.18,
+  SPEED            = 100,
   SLEEP            = 0.1,
 }
 
 local perturbation_seed   = 5678
 local learning_rate       = 0.01
-local momentum            = 0.2
+local momentum            = 0.1
 local weight_decay        = 1e-04
-local L1_norm             = 1e-05
+local L1_norm             = 0.0 -- 1e-05
 local max_norm_penalty    = 4
 local perturbation_random = random(perturbation_seed)
 
@@ -49,11 +49,13 @@ end
 
 function utils.do_action(action)
   if action == utils.ACTION_FORWARD then
-    brickpi.motorSteering(utils.LEFT_MOTOR, utils.RIGHT_MOTOR,  0, utils.SPEED*2)
+    brickpi.motorSpeed(utils.LEFT_MOTOR, utils.RIGHT_MOTOR, utils.SPEED)
   elseif action == utils.ACTION_LEFT then
-    brickpi.motorSteering(utils.LEFT_MOTOR, utils.RIGHT_MOTOR, -1, utils.SPEED)
+    brickpi.motorSpeed(utils.LEFT_MOTOR,  -utils.SPEED)
+    brickpi.motorSpeed(utils.RIGHT_MOTOR,  utils.SPEED)
   elseif action == utils.ACTION_RIGHT then
-    brickpi.motorSteering(utils.LEFT_MOTOR, utils.RIGHT_MOTOR,  1, utils.SPEED)
+    brickpi.motorSpeed(utils.LEFT_MOTOR,   utils.SPEED)
+    brickpi.motorSpeed(utils.RIGHT_MOTOR, -utils.SPEED)
   elseif action == utils.ACTION_STOP then
     brickpi.motorSpeed(utils.LEFT_MOTOR, utils.RIGHT_MOTOR, 0)
   else
@@ -79,7 +81,8 @@ end
 function utils.get_input_from_image_path(img_path)
   local input_img = ImageIO.read(img_path)
   local input = utils.normalize(input_img:to_grayscale():invert_colors():matrix():clone("col_major"))
-  input = input:rewrap(1, table.unpack(input:dim()))
+  local d = input:dim()
+  input = input:rewrap(1, d[1], d[2], ( (#d == 3) and d[3] ) or 1)
   return input,input_img
 end
 
@@ -157,7 +160,12 @@ end
 
 local trainer = {}
 
+local perturbation_random = random()
+local noise = ann.components.salt_and_pepper{ prob=0.2, zero=0, one=1,
+                                              random=perturbation_random }
 function trainer:update(prev_state, prev_action, state, reward)
+  local prev_state = noise:forward(prev_state):get_matrix()
+  local state = noise:forward(state):get_matrix()
   local thenet = self.thenet
   local optimizer = self.optimizer
   local gradients = self.gradients
@@ -167,9 +175,9 @@ function trainer:update(prev_state, prev_action, state, reward)
     optimizer:execute(function(it)
                         thenet:reset(it)
                         local output = thenet:forward(state):get_matrix()
-                        local qs  = thenet:forward(prev_state):get_matrix()
+                        local qs  = thenet:forward(prev_state,true):get_matrix()
                         local qsa = qs:get(1, prev_action)
-                        local expected_qsa = qsa + self.ALPHA * ( reward + self.DISCOUNT * output:max() - qsa )
+                        local expected_qsa = math.min(1, math.max(0, reward + self.DISCOUNT * output:max()))
                         local diff = (qsa - expected_qsa)
                         local loss = 0.5 * diff * diff
                         error_grad:set(1, prev_action, ( qsa - expected_qsa ) )
@@ -209,7 +217,7 @@ function trainer:one_step(img_path, sensor)
   return action
 end
 
-function trainer:__call(filename, ALPHA, DISCOUNT)
+function trainer:__call(filename, DISCOUNT)
   local tr = util.deserialize(filename)
   tr:set_option("learning_rate",     learning_rate)
   tr:set_option("momentum",          momentum)
@@ -231,7 +239,6 @@ function trainer:__call(filename, ALPHA, DISCOUNT)
     weights = weights,
     optimizer = optimizer,
     gradients = matrix.dict(),
-    ALPHA = ALPHA,
     DISCOUNT = DISCOUNT,
   }
   setmetatable(obj, { __index=self })

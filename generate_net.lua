@@ -5,7 +5,7 @@ local weights_seed = 1234
 package.path = "%s?.lua;%s"%{ arg[0]:get_path(), package.path }
 local utils = require "utils"
 --
-local activation_function = "relu"
+local activation_function = "tanh"
 local w_inf               = -0.1
 local w_sup               =  0.1
 local weights_random      = random(weights_seed)
@@ -32,9 +32,10 @@ local hidden = 32
 local thenet = ann.components.stack()
 
 if ann_type == "cnn" then
-  thenet:push( ann.components.convolution{ kernel=conv1, n=nconv1,
-                                           weights="w1",
-                                           input_planes_dim = 3 } ):
+  thenet:push( ann.components.rewrap{ size=INPUT_SIZES } ):
+  push( ann.components.convolution{ kernel=conv1, n=nconv1,
+                                    weights="w1",
+                                    input_planes_dim = 3 } ):
   push( ann.components.convolution_bias{ n=nconv1, ndims=#conv1,
                                          weights="b1" } ):
   push( ann.components.actf[activation_function]() ):
@@ -80,35 +81,20 @@ else
   error("Unknown ann_type= " .. ann_type)
 end
 
+thenet:push( ann.components.actf.softmax() )
+
 local trainer = trainable.supervised_trainer(thenet)
 trainer:build()
 --
-if ann_type ~= "perceptron" then
-  trainer:randomize_weights{
-    name_match  = "w.*",
-    random      = weights_random,
-    inf         = w_inf,
-    sup         = w_sup,
-    use_fanin   = true,
-    use_fanout  = true,
-  }
-  trainer:randomize_weights{
-    name_match  = "b.*",
-    random      = weights_random,
-    inf         = 0,
-    sup         = 0.2,
-    use_fanin   = true,
-    use_fanout  = true,
-  }
-else
-  trainer:randomize_weights{
-    random      = weights_random,
-    inf         = w_inf,
-    sup         = w_sup,
-    use_fanin   = true,
-    use_fanout  = true,
-  }
-end
+trainer:randomize_weights{
+  name_match  = "w.*",
+  random      = weights_random,
+  inf         = w_inf,
+  sup         = w_sup,
+  use_fanin   = true,
+  use_fanout  = true,
+}
+for _,b in trainer:iterate_weights("b.*") do b:zeros() end
 --
 if io.open(filename) then error("Unable to overwrite filename: " .. filename) end
 trainer:save(filename, "binary")

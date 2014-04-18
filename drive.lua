@@ -12,6 +12,8 @@ local trainer = util.deserialize(filename)
 local thenet = trainer:get_component()
 
 utils.setup_brickpi()
+brickpi.sensorType(utils.LIGHT_SENSOR,brickpi.TYPE_SENSOR_LIGHT_OFF)
+brickpi.setupSensors()
 utils.do_action(utils.ACTION_STOP)
 
 local finished = false
