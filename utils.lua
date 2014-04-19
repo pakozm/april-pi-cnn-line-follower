@@ -18,8 +18,8 @@ local utils = {
 }
 
 local perturbation_seed   = 5678
-local learning_rate       = 0.01
-local momentum            = 0.1
+local learning_rate       = 0.1
+local momentum            = 0.4
 local weight_decay        = 1e-04
 local L1_norm             = 0.0 -- 1e-05
 local max_norm_penalty    = 4
@@ -210,14 +210,15 @@ function trainer:one_step(img_path, sensor)
   local input,input_img = utils.get_input_from_image_path(img_path)
   self.input_img = input_img
   local reward,sensor_value = sensor:compute_reward()
-  local loss,output,expected_qsa
+  local loss,output,qs,expected_qsa
   local action
   if self.prev_input and self.prev_action then
     loss,output,qs,expected_qsa = self:update(self.prev_input, self.prev_action,
                                               input, reward)
     action = take_action(output)
-    printf("Q(s): %8.2f %8.2f %8.2f  E(Q(s)): %8.2f   ACTION: %d  SENSOR: %4d (%4d %4d) REWARD: %6.2f  LOSS: %8.4f  MP: %.4f %.4f\n",
-           qs:get(1,1), qs:get(1,2), qs:get(1,3), expected_qsa,
+    self.Qprob = (self.Qprob or 0) + math.log(qs:get(1,self.prev_action))
+    printf("%8.2f Q(s): %8.2f %8.2f %8.2f  E(Q(s)): %8.2f   ACTION: %d  SENSOR: %4d (%4d %4d) REWARD: %6.2f  LOSS: %8.4f  MP: %.4f %.4f\n",
+           -self.Qprob, qs:get(1,1), qs:get(1,2), qs:get(1,3), expected_qsa,
            self.prev_action, sensor_value, sensor.BLACK_MEAN - sensor.BLACK_V,
            sensor.BLACK_MEAN + sensor.BLACK_V, reward, loss,
            self.tr:norm2("w."), self.tr:norm2("b."))
@@ -226,7 +227,7 @@ function trainer:one_step(img_path, sensor)
   end
   self.prev_input  = input
   self.prev_action = action
-  return action
+  return action,qs
 end
 
 function trainer:__call(filename, DISCOUNT)
@@ -264,7 +265,6 @@ setmetatable(trainer,trainer)
 local offline_controller = {}
 
 function offline_controller:next()
-  self.IDX=self.IDX+1
   local info_f = io.open("%s/info%06d.txt"%{self.dir,self.IDX},"r")
   if not info_f then return false end
   local info_t = info_f:read("*l"):tokenize()
@@ -275,12 +275,15 @@ function offline_controller:next()
     mean = tonumber(info_t[4]),
     var = tonumber(info_t[6]),
   }
-  self.input = ImageIO.read("%s/info%06d.png"%{self.dir,self.IDX})
-  if not self.input then return false end
+  self.input_path = "%s/input%06d.png"%{self.dir,self.IDX+1}
+  local aux = io.open(self.input_path,"r")
+  if not aux then return false end
+  aux:close()
+  self.IDX=self.IDX+1
   return true
 end
 
-function offline_controller:get_input() return self.input end
+function offline_controller:get_input_path() return self.input_path end
 function offline_controller:get_info() return self.info end
 
 function offline_controller:__call(dir)
