@@ -3,13 +3,12 @@ local utils = require "utils"
 local brickpi = require "brickpi"
 
 -- QLearning parameters
-local HISTORY_DISCOUNT = 0.7
 local PENALTY          =  -1
 local REWARD           =   1
 
 -- MAIN
 local sensor = utils.sensor(utils.LIGHT_SENSOR,
-                            REWARD, PENALTY, HISTORY_DISCOUNT)
+                            REWARD, PENALTY)
 
 utils.setup_brickpi()
 utils.do_action(utils.ACTION_STOP)
