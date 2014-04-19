@@ -9,9 +9,8 @@ local out_filename        = arg[2] or "nets/last.net"
 
 -- QLearning parameters
 local DISCOUNT         = 0.6
-local HISTORY_DISCOUNT = 0.7
 local PENALTY          =  -0.5
-local REWARD           =   0.5
+local REWARD           =   2.0
 
 --
 local save = true -- save snapshot
@@ -23,8 +22,8 @@ local function save_snapshot(trainer,sensor,action)
   if save and idx < 100000 then
     ImageIO.write(trainer.input_img, "data/input%06d.png"%{ idx })
     local f = io.open("data/info%06d.txt"%{ idx - 1 }, "w")
-    fprintf(f, "%d %d ( %d %d )\n",
-            action, sensor.value, sensor.BLACK_LOW, sensor.BLACK_HIGH)
+    fprintf(f, "%d %d ( %d +- %d )\n",
+            action, sensor.value, sensor.BLACK_MEAN, sensor.BLACK_V)
     f:close()
     idx=idx+1
   end
@@ -34,7 +33,7 @@ end
 os.execute("rm -f data/*")
 local trainer = utils.trainer(filename, DISCOUNT)
 local sensor = utils.sensor(utils.LIGHT_SENSOR,
-                            REWARD, PENALTY, HISTORY_DISCOUNT)
+                            REWARD, PENALTY)
 
 utils.setup_brickpi()
 utils.do_action(utils.ACTION_STOP)
@@ -48,6 +47,7 @@ local clock = util.stopwatch()
 while not finished do
   clock:reset()
   clock:go()
+  collectgarbage("collect")
   --
   local img_path = utils.take_image(images_dir)
   local action = trainer:one_step(img_path, sensor)

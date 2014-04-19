@@ -51,11 +51,11 @@ function utils.do_action(action)
   if action == utils.ACTION_FORWARD then
     brickpi.motorSpeed(utils.LEFT_MOTOR, utils.RIGHT_MOTOR, utils.SPEED)
   elseif action == utils.ACTION_LEFT then
-    brickpi.motorSpeed(utils.LEFT_MOTOR,  -utils.SPEED)
-    brickpi.motorSpeed(utils.RIGHT_MOTOR,  utils.SPEED)
+    brickpi.motorSpeed(utils.LEFT_MOTOR,  -utils.SPEED*0.7)
+    brickpi.motorSpeed(utils.RIGHT_MOTOR,  utils.SPEED*0.7)
   elseif action == utils.ACTION_RIGHT then
-    brickpi.motorSpeed(utils.LEFT_MOTOR,   utils.SPEED)
-    brickpi.motorSpeed(utils.RIGHT_MOTOR, -utils.SPEED)
+    brickpi.motorSpeed(utils.LEFT_MOTOR,   utils.SPEED*0.7)
+    brickpi.motorSpeed(utils.RIGHT_MOTOR, -utils.SPEED*0.7)
   elseif action == utils.ACTION_STOP then
     brickpi.motorSpeed(utils.LEFT_MOTOR, utils.RIGHT_MOTOR, 0)
   else
@@ -98,21 +98,23 @@ end
 
 local sensor = {}
 
-local function is_black(v,BLACK_LOW,BLACK_HIGH)
-  if v > BLACK_LOW and v < BLACK_HIGH then return true end
+local function is_black(v,mean,var)
+  if v > (mean-var) and v < (mean+var) then return true end
+  return false
 end
 
 function sensor:compute_reward()
   local value  = brickpi.sensorValue(self.which_sensor)
   local reward
-  if is_black(value,self.BLACK_LOW,self.BLACK_HIGH) then
-    reward = self.REWARD
+  if is_black(value,self.BLACK_MEAN,self.BLACK_V) then
+    local x0 = self.BLACK_MEAN - self.BLACK_V
+    local y = math.abs(value - x0) * self.slope + self.PENALTY
+    reward = math.min(self.REWARD, y)
   else
     reward = self.PENALTY
   end
-  self.acc_value = self.acc_value * self.HISTORY_DISCOUNT + (1 - self.HISTORY_DISCOUNT) * reward
   self.value = value
-  return self.acc_value,value
+  return reward,value
 end
 
 function sensor:calibrate()
@@ -126,18 +128,18 @@ function sensor:calibrate()
     utils.sleep(0.1)
   end
   local mean,var = mean_var:compute()
-  self.BLACK_LOW = mean - 30 --3*var
-  self.BLACK_HIGH = mean + 30 --3*var
-  print("BLACK IS: ", self.BLACK_LOW, self.BLACK_HIGH)
+  self.BLACK_MEAN = mean
+  self.BLACK_V = math.max(20, math.min(30, 3*var))
+  print("BLACK IS: ", self.BLACK_MEAN - self.BLACK_V,
+        self.BLACK_MEAN + self.BLACK_V)
+  self.slope = (self.REWARD - self.PENALTY) / (self.BLACK_V * 2)
 end
 
-function sensor:__call(which_sensor,REWARD,PENALTY,HISTORY_DISCOUNT)
+function sensor:__call(which_sensor,REWARD,PENALTY)
   local obj = {
     which_sensor = which_sensor,
     REWARD = REWARD,
     PENALTY = PENALTY,
-    HISTORY_DISCOUNT = HISTORY_DISCOUNT,
-    acc_value = 0,
   }
   setmetatable(obj, { __index=self })
   return obj
@@ -169,10 +171,12 @@ function trainer:update(prev_state, prev_action, state, reward)
   local thenet = self.thenet
   local optimizer = self.optimizer
   local gradients = self.gradients
+  local traces = self.traces
   local error_grad = matrix.col_major(1, utils.NACTIONS):zeros()
   local loss,output,qs
   loss,gradients,output,qs,expected_qsa =
     optimizer:execute(function(it)
+                        assert(not it or it == 0)
                         thenet:reset(it)
                         local output = thenet:forward(state):get_matrix()
                         local qs  = thenet:forward(prev_state,true):get_matrix()
@@ -184,7 +188,14 @@ function trainer:update(prev_state, prev_action, state, reward)
                         thenet:backprop(error_grad)
                         gradients:zeros()
                         gradients = thenet:compute_gradients(gradients)
-                        return loss,gradients,output,qs,expected_qsa
+                        if traces:size() == 0 then
+                          for name,g in pairs(gradients) do
+                            traces[name] = matrix.as(g):zeros()
+                          end
+                        end
+                        traces:scal(0.5)
+                        traces:axpy(1.0, gradients)
+                        return loss,traces,output,qs,expected_qsa
                       end,
                       weights)
   self.gradients = gradients
@@ -207,7 +218,8 @@ function trainer:one_step(img_path, sensor)
     action = take_action(output)
     printf("Q(s): %8.2f %8.2f %8.2f  E(Q(s)): %8.2f   ACTION: %d  SENSOR: %4d (%4d %4d) REWARD: %6.2f  LOSS: %8.4f  MP: %.4f %.4f\n",
            qs:get(1,1), qs:get(1,2), qs:get(1,3), expected_qsa,
-           self.prev_action, sensor_value, sensor.BLACK_LOW, sensor.BLACK_HIGH, reward, loss,
+           self.prev_action, sensor_value, sensor.BLACK_MEAN - sensor.BLACK_V,
+           sensor.BLACK_MEAN + sensor.BLACK_V, reward, loss,
            self.tr:norm2("w."), self.tr:norm2("b."))
   else
     action = utils.ACTION_FORWARD
@@ -239,6 +251,7 @@ function trainer:__call(filename, DISCOUNT)
     weights = weights,
     optimizer = optimizer,
     gradients = matrix.dict(),
+    traces = matrix.dict(),
     DISCOUNT = DISCOUNT,
   }
   setmetatable(obj, { __index=self })
