@@ -248,7 +248,39 @@ setmetatable(trainer,trainer)
 
 -------------------------------------------------------
 
+local offline_controller = {}
+
+function offline_controller:next()
+  self.IDX=self.IDX+1
+  local info_f = io.open("%s/info%06d.txt"%{self.dir,self.IDX},"r")
+  if not info_f then return false end
+  local info_t = info_f:read("*l"):tokenize()
+  info_f:close()
+  self.info = {
+    action = tonumber(info_t[1]),
+    sensor = tonumber(info_t[2]),
+    mean = tonumber(info_t[4]),
+    var = tonumber(info_t[6]),
+  }
+  self.input = ImageIO.read("%s/info%06d.png"%{self.dir,self.IDX})
+  if not self.input then return false end
+  return true
+end
+
+function offline_controller:get_input() return self.input end
+function offline_controller:get_info() return self.info end
+
+function offline_controller:__call(dir)
+  local obj = { dir=dir, IDX=0 }
+  setmetatable(obj, { __index=self })
+  return obj
+end
+setmetatable(offline_controller,offline_controller)
+
+-------------------------------------------------------
+
 utils.trainer = trainer
 utils.sensor  = sensor
+utils.offline_controller = offline_controller
 
 return utils
