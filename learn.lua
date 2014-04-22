@@ -8,10 +8,10 @@ local filename            = arg[1] or "nets/default.net"
 local out_filename        = arg[2] or "nets/last.net"
 
 -- QLearning parameters
-local DISCOUNT         = 0.6
-local PENALTY          =  -0.5
-local REWARD           =   2.0
-
+local DISCOUNT         =  0.6
+local PENALTY          = -0.5
+local REWARD           =  2.0
+local MAX_EPISODE_LENGTH = 1000
 --
 local save = true -- save snapshot
 
@@ -44,26 +44,32 @@ signal.register(signal.SIGINT, function() finished = true end)
 
 utils.sleep(utils.SLEEP)
 local clock = util.stopwatch()
+local episode = 0
 while not finished do
-  clock:reset()
-  clock:go()
-  collectgarbage("collect")
-  --
-  local img_path = utils.take_image(images_dir)
-  local action = trainer:one_step(img_path, sensor)
-  save_snapshot(trainer, sensor, action)
-  trainer:save(out_filename)
-  utils.do_action(action)
-  utils.do_until(brickpi.update)
-  local img = ann.connections.input_filters_image(trainer.tr:weights("w1"),
-                                                  {24, 24})
-  ImageIO.write(img,"data/wop.png")
-  --
-  clock:stop()
-  local t1,t2 = clock:read()
-  local extra_sleep = utils.SLEEP - t1
-  if extra_sleep > 0 then
-    utils.sleep(extra_sleep)
+  episode = episode + 1
+  trainer:reset()
+  for i=1,MAX_EPISODE_LENGTH do
+    clock:reset()
+    clock:go()
+    collectgarbage("collect")
+    --
+    local img_path = utils.take_image(images_dir)
+    local action,reward = trainer:append_one_step(img_path, sensor)
+    print(episode, i, reward, action)
+    -- save_snapshot(trainer, sensor, action)
+    trainer:save(out_filename)
+    utils.do_action(action)
+    utils.do_until(brickpi.update)
+    local img = ann.connections.input_filters_image(trainer.tr:weights("w1"),
+                                                    {24, 24})
+    ImageIO.write(img,"data/wop.png")
+    --
+    clock:stop()
+    local t1,t2 = clock:read()
+    local extra_sleep = utils.SLEEP - t1
+    if extra_sleep > 0 then
+      utils.sleep(extra_sleep)
+    end
   end
 end
 

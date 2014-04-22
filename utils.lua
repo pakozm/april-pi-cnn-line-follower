@@ -148,112 +148,95 @@ setmetatable(sensor,sensor)
 
 -------------------------------------------------------
 
+local strategies = trainable.qlearning_trainer.strategies
 local exploration_random = random()
-local function take_action(output)
-  local coin = exploration_random:rand()
-  if coin < utils.EPSILON then
-    return exploration_random:choose{utils.ACTION_FORWARD,
-                                     utils.ACTION_LEFT,
-                                     utils.ACTION_RIGHT}
-  end
-  local _,argmax = output:max()
-  return argmax
-end
+local take_action = strategies.make_epsilon_greedy(utils.EPSILON,
+                                                   exploration_random)
 
 local trainer = {}
-
-local perturbation_random = random()
-local noise = ann.components.salt_and_pepper{ prob=0.2, zero=0, one=1,
-                                              random=perturbation_random }
-function trainer:update(prev_state, prev_action, state, reward)
-  local prev_state = noise:forward(prev_state):get_matrix()
-  local state = noise:forward(state):get_matrix()
-  local thenet = self.thenet
-  local optimizer = self.optimizer
-  local gradients = self.gradients
-  local traces = self.traces
-  local error_grad = matrix.col_major(1, utils.NACTIONS):zeros()
-  local loss,output,qs
-  loss,gradients,output,qs,expected_qsa =
-    optimizer:execute(function(it)
-                        assert(not it or it == 0)
-                        thenet:reset(it)
-                        local output = thenet:forward(state):get_matrix()
-                        local qs  = thenet:forward(prev_state,true):get_matrix()
-                        local qsa = qs:get(1, prev_action)
-                        local expected_qsa = math.min(1, math.max(0, reward + self.DISCOUNT * output:max()))
-                        local diff = (qsa - expected_qsa)
-                        local loss = 0.5 * diff * diff
-                        error_grad:set(1, prev_action, ( qsa - expected_qsa ) )
-                        thenet:backprop(error_grad)
-                        gradients:zeros()
-                        gradients = thenet:compute_gradients(gradients)
-                        if traces:size() == 0 then
-                          for name,g in pairs(gradients) do
-                            traces[name] = matrix.as(g):zeros()
-                          end
-                        end
-                        traces:scal(0.5)
-                        traces:axpy(1.0, gradients)
-                        return loss,traces,output,qs,expected_qsa
-                      end,
-                      weights)
-  self.gradients = gradients
-  return loss,output,qs,expected_qsa
-end
 
 function trainer:save(out_filename)
   self.tr:save(out_filename, "binary")
 end
 
-function trainer:one_step(img_path, sensor)
+local perturbation_random = random()
+local noise = ann.components.salt_and_pepper{ prob=0.2, zero=0, one=1,
+                                              random=perturbation_random }
+function trainer:train_batch()
+  local batch = assert(self.batch)
+  -- BATCH TRAIN
+  local in_ds,out_ds,mask_ds = batch:compute_dataset_pair()
+  -- for ipat,pat in out_ds:patterns() do print(ipat, table.concat(pat, " "), table.concat(mask_ds:getPattern(ipat), " ")) end
+  local train_func = trainable.train_wo_validation{
+    max_epochs = 100,
+    min_epochs = 20,
+    percentage_stopping_criterion = 0.01,
+  }
+  local in_ds = dataset.token.filter(in_ds, noise)
+  while train_func:execute(function()
+                             local tr_error = sup_trainer:train_dataset{
+                               input_dataset  = in_ds,
+                               output_dataset = out_ds,
+                               mask_dataset = mask_ds,
+                               shuffle = shuffle_random,
+                             }
+                             return sup_trainer,tr_error
+                           end) do
+    print(train_func:get_state_string())
+  end
+  self.batch = self.ql:get_batch_builder()
+end
+
+function trainer:append_one_step(img_path, sensor)
   local input,input_img = utils.get_input_from_image_path(img_path)
   self.input_img = input_img
   local reward,sensor_value = sensor:compute_reward()
-  local loss,output,qs,expected_qsa
+  local output = self.ql:calculate(self.input)
   local action
   if self.prev_input and self.prev_action then
-    loss,output,qs,expected_qsa = self:update(self.prev_input, self.prev_action,
-                                              input, reward)
-    action = take_action(output)
-    self.Qprob = (self.Qprob or 0) + math.log(qs:get(1,self.prev_action))
-    printf("%8.2f Q(s): %8.2f %8.2f %8.2f  E(Q(s)): %8.2f   ACTION: %d  SENSOR: %4d (%4d %4d) REWARD: %6.2f  LOSS: %8.4f  MP: %.4f %.4f\n",
-           -self.Qprob, qs:get(1,1), qs:get(1,2), qs:get(1,3), expected_qsa,
-           self.prev_action, sensor_value, sensor.BLACK_MEAN - sensor.BLACK_V,
-           sensor.BLACK_MEAN + sensor.BLACK_V, reward, loss,
-           self.tr:norm2("w."), self.tr:norm2("b."))
+    local batch = self.batch or self.ql:get_batch_builder()
+    batch:add(self.prev_input, self.prev_output, self.prev_action, reward)
   else
     action = utils.ACTION_FORWARD
   end
+  local action = take_action(output)
   self.prev_input  = input
   self.prev_action = action
-  return action,qs
+  self.prev_output = output
+  return action,reward
+end
+
+function trainer:reset()
+  self.ql:reset()
+  self.prev_action = nil
+  self.prev_input  = nil
+  self.prev_output = nil
 end
 
 function trainer:__call(filename, DISCOUNT)
   local tr = util.deserialize(filename)
-  tr:set_option("learning_rate",     learning_rate)
-  tr:set_option("momentum",          momentum)
-  tr:set_option("weight_decay",      weight_decay)
-  tr:set_option("L1_norm",           L1_norm)
-  tr:set_option("max_norm_penalty",  max_norm_penalty)
-  --
-  tr:set_layerwise_option("b.", "weight_decay",     0.0)
-  tr:set_layerwise_option("b.", "max_norm_penalty", 0.0)
-  tr:set_layerwise_option("b.", "L1_norm",          0.0)
-  --
   local thenet  = tr:get_component()
   local weights = tr:get_weights_table()
+  local ql = trainable.qlearning_trainer{
+    sup_trainer = tr,
+    discount = DISCOUNT,
+    clampQ = function(v) return math.clamp(v,0.0,1.0) end,
+  }
+  ql:set_option("learning_rate",     learning_rate)
+  ql:set_option("momentum",          momentum)
+  ql:set_option("weight_decay",      weight_decay)
+  ql:set_option("L1_norm",           L1_norm)
+  ql:set_option("max_norm_penalty",  max_norm_penalty)
   --
-  local optimizer = tr:get_optimizer()
+  ql:set_layerwise_option("b.", "weight_decay",     0.0)
+  ql:set_layerwise_option("b.", "max_norm_penalty", 0.0)
+  ql:set_layerwise_option("b.", "L1_norm",          0.0)
+  --
   local obj = {
     tr = tr,
+    ql = ql,
     thenet = thenet,
     weights = weights,
-    optimizer = optimizer,
-    gradients = matrix.dict(),
-    traces = matrix.dict(),
-    DISCOUNT = DISCOUNT,
   }
   setmetatable(obj, { __index=self })
   return obj

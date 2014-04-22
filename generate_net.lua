@@ -83,7 +83,7 @@ end
 
 thenet:push( ann.components.actf.softmax() )
 
-local trainer = trainable.supervised_trainer(thenet)
+local trainer = trainable.supervised_trainer(thenet,ann.loss.mse(),64)
 trainer:build()
 --
 trainer:randomize_weights{
